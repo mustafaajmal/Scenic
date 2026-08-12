@@ -17,7 +17,19 @@ Research/
   asteroid-rl-demo/
 ```
 
-## Visualize (Vizard)
+## Probabilistic scenes → Vizard
+
+Scenic defines a **distribution**; each `generate()` draws one scene. Rendering
+is in **Vizard/Basilisk**, not Scenic's built-in visualizer:
+
+```powershell
+..\asteroid-rl-demo\.venv\Scripts\python.exe examples\basilisk\run_random_approach.py --samples 3 --open-last
+```
+
+You'll see different spacecraft XYZ each sample and a `.bin` per sample under
+`outputs/viz/random_approach/`. The asteroid mesh is fixed in the MuJoCo XML
+(no free joint); Scenic still uses an `Asteroid` object for `facing toward` /
+distance constraints.
 
 On **Windows**, live ZeroMQ often crashes; the safe path is **save-file**:
 

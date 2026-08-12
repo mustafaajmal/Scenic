@@ -74,6 +74,7 @@ class BasiliskBackend:
         self._demo_root = _ensure_asteroid_rl_on_path(self.config.asteroid_rl_root)
         self.handles: Any = None
         self._hub: Any = None
+        self._asteroid_body: Any = None
         self._landing_site: Optional[np.ndarray] = None
         self._pending_throttle: float = 0.0
         self._pending_point_dir: Optional[np.ndarray] = None
@@ -90,6 +91,7 @@ class BasiliskBackend:
     ) -> None:
         """Create (or rebuild) the Basilisk/MuJoCo sim at the given IC."""
         from asteroid_rl.env import (
+            ASTEROID_BODY_NAME,
             LandingEnvConfig,
             SPACECRAFT_BODY_NAME,
             build_sim,
@@ -117,6 +119,10 @@ class BasiliskBackend:
         vel = np.asarray(velocity_N, dtype=np.float64).reshape(3)
         self.handles = build_sim(cfg, initial_position_N=pos, initial_velocity_N=vel)
         self._hub = self.handles.scene.getBody(SPACECRAFT_BODY_NAME)
+        try:
+            self._asteroid_body = self.handles.scene.getBody(ASTEROID_BODY_NAME)
+        except Exception:
+            self._asteroid_body = None
         self._landing_site = cfg.target_array()
         if sigma_BN is not None:
             self.set_attitude_mrp(sigma_BN)
@@ -147,6 +153,38 @@ class BasiliskBackend:
         self._pending_point_dir = None
         # Prime recorder with one integrator tick.
         self.advance(0.02)
+
+    def set_asteroid_pose(
+        self,
+        position_N: Sequence[float],
+        sigma_BN: Optional[Sequence[float]] = None,
+    ) -> None:
+        """Try to move the MuJoCo asteroid; no-op if the body is welded (default XML).
+
+        The stock ``sat_ast_landing.xml`` asteroid has no free joint, so Scenic
+        asteroid objects are used for scenario geometry (facing / distance) while
+        the rendered mesh stays at the XML pose. Spacecraft placement *is*
+        applied and is what varies in Vizard.
+        """
+        if self._asteroid_body is None:
+            return
+        if not hasattr(self._asteroid_body, "setPosition"):
+            return
+        pos = list(np.asarray(position_N, dtype=float).reshape(3))
+        try:
+            self._asteroid_body.setPosition(pos)
+        except Exception:
+            # Welded asteroid body — ignore; spacecraft randomization still works.
+            return
+        if sigma_BN is not None and hasattr(self._asteroid_body, "setAttitude"):
+            try:
+                self._asteroid_body.setAttitude(
+                    list(np.asarray(sigma_BN, dtype=float).reshape(3))
+                )
+                if hasattr(self._asteroid_body, "setAttitudeRate"):
+                    self._asteroid_body.setAttitudeRate([0.0, 0.0, 0.0])
+            except Exception:
+                return
 
     def set_attitude_mrp(self, sigma_BN: Sequence[float]) -> None:
         if self._hub is None:
@@ -225,3 +263,4 @@ class BasiliskBackend:
     def destroy(self) -> None:
         self.handles = None
         self._hub = None
+        self._asteroid_body = None

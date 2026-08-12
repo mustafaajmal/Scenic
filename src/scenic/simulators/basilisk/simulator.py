@@ -131,8 +131,18 @@ class BasiliskSimulation(Simulation):
         if kind is None:
             return
         if kind == "asteroid":
-            # Asteroid mesh is already part of the MuJoCo scene; Scenic object is
-            # metadata / workspace only.
+            # Asteroid mesh already exists in MuJoCo; apply Scenic-sampled pose
+            # so Vizard shows the probabilistic placement.
+            pos = [
+                float(obj.position.x),
+                float(obj.position.y),
+                float(obj.position.z),
+            ]
+            try:
+                sigma = scenic_orientation_to_mrp(obj.orientation)
+            except Exception:
+                sigma = None
+            self.backend.set_asteroid_pose(pos, sigma)
             obj.basiliskHandle = "asteroid"
             return
         if kind != "spacecraft":
