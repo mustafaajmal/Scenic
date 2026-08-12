@@ -59,3 +59,55 @@ def test_soft_brake_scenario_runs():
     final_objs = sim.result.trajectory[-1]
     # trajectory entries are typically tuples of positions / states
     assert final_objs is not None
+
+
+def test_procedural_mesh_varies():
+    import numpy as np
+    from scenic.simulators.basilisk.asteroid_mesh import (
+        BumpSpec,
+        CraterSpec,
+        RidgeSpec,
+        generate_asteroid_mesh,
+    )
+
+    a = generate_asteroid_mesh(
+        radii=(50, 40, 35),
+        bumps=[BumpSpec(center=(40, 0, 0), height=8.0, spread=15.0)],
+        craters=[CraterSpec(center=(0, 35, 0), depth=6.0, radius=8.0, rim_height=2.0)],
+        ridges=[
+            RidgeSpec(
+                center=(0, 0, 30),
+                direction=(1, 0.2, 0),
+                height=7.0,
+                length=25.0,
+                width=5.0,
+            )
+        ],
+        subdivisions=2,
+        noise_amp=2.0,
+        noise_seed=1,
+    )
+    b = generate_asteroid_mesh(
+        radii=(60, 55, 45),
+        bumps=[BumpSpec(center=(0, 50, 0), height=12.0, spread=20.0)],
+        subdivisions=2,
+        noise_amp=2.5,
+        noise_seed=99,
+    )
+    assert len(a.vertices) >= 12
+    assert not np.allclose(a.extents, b.extents)
+
+
+def test_dynamic_asteroid_scenario_runs():
+    import scenic
+
+    path = ROOT / "examples" / "basilisk" / "dynamic_asteroid.scenic"
+    scenario = scenic.scenarioFromFile(str(path))
+    scene, _ = scenario.generate(maxIterations=20)
+    sim = scenario.getSimulator().simulate(
+        scene, maxSteps=6, timestep=0.25, verbosity=0
+    )
+    assert sim is not None
+    meta = getattr(sim.backend, "procedural_meta", {}) or {}
+    assert meta.get("mode") == "procedural"
+    assert meta.get("n_vertices", 0) > 0

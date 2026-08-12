@@ -85,12 +85,34 @@ class BasiliskSimulation(Simulation):
         super().__init__(scene, **kwargs)
 
     def setup(self):
-        # Identify the spacecraft before object creation so we can build the sim.
         craft = None
+        asteroid = None
+        bumps = []
+        craters = []
+        ridges = []
         for obj in self.scene.objects:
-            if getattr(obj, "basiliskKind", None) == "spacecraft":
+            kind = getattr(obj, "basiliskKind", None)
+            if kind == "spacecraft" and craft is None:
                 craft = obj
-                break
+            elif kind == "procedural_asteroid":
+                asteroid = obj
+            elif kind == "asteroid_bump":
+                bumps.append(obj)
+            elif kind == "asteroid_crater":
+                craters.append(obj)
+            elif kind == "asteroid_ridge":
+                ridges.append(obj)
+
+        if asteroid is not None:
+            for b in getattr(asteroid, "terrain", ()) or ():
+                kind = getattr(b, "basiliskKind", None)
+                if kind == "asteroid_bump" and b not in bumps:
+                    bumps.append(b)
+                elif kind == "asteroid_crater" and b not in craters:
+                    craters.append(b)
+                elif kind == "asteroid_ridge" and b not in ridges:
+                    ridges.append(b)
+
         if craft is None:
             raise SimulationCreationError(
                 "Basilisk scenes need at least one Spacecraft object "
@@ -119,7 +141,76 @@ class BasiliskSimulation(Simulation):
             sigma = np.zeros(3, dtype=np.float64)
 
         try:
-            self.backend.build(pos, vel, sigma)
+            if asteroid is not None:
+                ast_pos = np.array(
+                    [
+                        float(asteroid.position.x),
+                        float(asteroid.position.y),
+                        float(asteroid.position.z),
+                    ],
+                    dtype=np.float64,
+                )
+                radii = (
+                    float(getattr(asteroid, "radiusX", getattr(asteroid, "width", 50.0) / 2)),
+                    float(getattr(asteroid, "radiusY", getattr(asteroid, "length", 40.0) / 2)),
+                    float(getattr(asteroid, "radiusZ", getattr(asteroid, "height", 35.0) / 2)),
+                )
+
+                def _rel(obj):
+                    return (
+                        float(obj.position.x) - float(ast_pos[0]),
+                        float(obj.position.y) - float(ast_pos[1]),
+                        float(obj.position.z) - float(ast_pos[2]),
+                    )
+
+                bump_specs = [
+                    (
+                        _rel(b),
+                        float(getattr(b, "bumpHeight", getattr(b, "height", 2.0))),
+                        float(getattr(b, "spread", 8.0)),
+                    )
+                    for b in bumps
+                ]
+                crater_specs = [
+                    (
+                        _rel(c),
+                        float(getattr(c, "craterDepth", 5.0)),
+                        float(getattr(c, "craterRadius", 8.0)),
+                        float(getattr(c, "rimHeight", 2.0)),
+                    )
+                    for c in craters
+                ]
+                ridge_specs = []
+                for r in ridges:
+                    d = getattr(r, "ridgeDir", (1.0, 0.0, 0.0))
+                    if hasattr(d, "x"):
+                        direction = (float(d.x), float(d.y), float(d.z))
+                    else:
+                        direction = (float(d[0]), float(d[1]), float(d[2]))
+                    ridge_specs.append(
+                        (
+                            _rel(r),
+                            direction,
+                            float(getattr(r, "ridgeHeight", 6.0)),
+                            float(getattr(r, "ridgeLength", 20.0)),
+                            float(getattr(r, "ridgeWidth", 5.0)),
+                        )
+                    )
+                self.backend.build_procedural(
+                    craft_position_N=pos,
+                    craft_velocity_N=vel,
+                    craft_sigma_BN=sigma,
+                    asteroid_position_N=ast_pos,
+                    radii=radii,
+                    bumps=bump_specs,
+                    craters=crater_specs,
+                    ridges=ridge_specs,
+                    subdivisions=int(getattr(asteroid, "subdivisions", 3)),
+                    detail_seed=int(float(getattr(asteroid, "detailSeed", 0)) % 1_000_000_007),
+                    noise_amp=float(getattr(asteroid, "noiseAmp", 2.0)),
+                )
+            else:
+                self.backend.build(pos, vel, sigma)
         except Exception as exc:
             raise SimulationCreationError(f"Failed to build Basilisk sim: {exc}") from exc
 
@@ -130,19 +221,12 @@ class BasiliskSimulation(Simulation):
         kind = getattr(obj, "basiliskKind", None)
         if kind is None:
             return
-        if kind == "asteroid":
-            # Asteroid mesh already exists in MuJoCo; apply Scenic-sampled pose
-            # so Vizard shows the probabilistic placement.
-            pos = [
-                float(obj.position.x),
-                float(obj.position.y),
-                float(obj.position.z),
-            ]
-            try:
-                sigma = scenic_orientation_to_mrp(obj.orientation)
-            except Exception:
-                sigma = None
-            self.backend.set_asteroid_pose(pos, sigma)
+        if kind in ("asteroid_bump", "asteroid_crater", "asteroid_ridge"):
+            # Terrain features only contribute to mesh generation in setup().
+            return
+        if kind in ("asteroid", "procedural_asteroid"):
+            # Procedural asteroids are baked into XML at build time.
+            # Stock asteroids remain metadata / welded mesh.
             obj.basiliskHandle = "asteroid"
             return
         if kind != "spacecraft":

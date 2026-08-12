@@ -27,9 +27,27 @@ is in **Vizard/Basilisk**, not Scenic's built-in visualizer:
 ```
 
 You'll see different spacecraft XYZ each sample and a `.bin` per sample under
-`outputs/viz/random_approach/`. The asteroid mesh is fixed in the MuJoCo XML
-(no free joint); Scenic still uses an `Asteroid` object for `facing toward` /
+`outputs/viz/random_approach/`. Stock `Asteroid` still uses the fixed Itokawa
+MuJoCo mesh (welded body — no free joint); Scenic uses it for `facing toward` /
 distance constraints.
+
+### Procedural asteroid (Mars-rover pattern)
+
+Like the [Webots Mars hills example](https://docs.scenic-lang.org/en/latest/tutorials/fundamentals.html#a-worked-example),
+each sample can rebuild **shape, size, and placement**:
+
+```scenic
+asteroid = new ProceduralAsteroid at (…),
+    with radiusX Range(40, 70),
+    with terrain [new AsteroidBump for _ in range(35)]
+```
+
+```powershell
+..\asteroid-rl-demo\.venv\Scripts\python.exe examples\basilisk\run_dynamic_asteroid.py --samples 3 --open-last
+```
+
+Each sample writes a fresh OBJ+XML under a temp dir and a Vizard `.bin` under
+`outputs/viz/dynamic_asteroid/`.
 
 On **Windows**, live ZeroMQ often crashes; the safe path is **save-file**:
 
@@ -66,10 +84,12 @@ scenario.getSimulator().simulate(scene, maxSteps=40, timestep=0.25)
 
 | File | Role |
 |------|------|
-| `scenic.simulators.basilisk.model` | World model (`Spacecraft`, `Asteroid`, actions) |
+| `scenic.simulators.basilisk.model` | `Spacecraft`, `Asteroid`, `ProceduralAsteroid`, `AsteroidBump` |
+| `asteroid_mesh.py` | Icosphere + Gaussian bumps → OBJ + MuJoCo XML |
 | `simulator.py` | `BasiliskSimulator` / `BasiliskSimulation` |
-| `backend.py` | `build_sim` / thruster / pointing bridge |
+| `backend.py` | Stock `build_sim` + `build_procedural` |
 | `actions.py` | `SetThrottleAction`, `SetPointingDirectionAction`, … |
+| `dynamic_asteroid.scenic` | Mars-style procedural rock demo |
 
 Thruster geometry matches asteroid_rl: body **+z** thrust, body **−z** boresight.
 Pointing at the pad then firing brakes *away* from the pad along the LOS.
