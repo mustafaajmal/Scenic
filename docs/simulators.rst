@@ -66,6 +66,27 @@ The simulator supports scenarios written using the cross-platform :ref:`driving_
 See the documentation of the `scenic.simulators.newtonian` module for details.
 
 
+Basilisk (asteroid landing)
+---------------------------
+
+Scenic can drive a **Basilisk + MuJoCo** asteroid-landing simulation through
+:obj:`scenic.simulators.basilisk`. The dynamics backend is the sister
+``asteroid-rl-demo`` package (``asteroid_rl.env.build_sim``): Scenic samples
+initial geometry and runs behaviors/actions; Basilisk integrates thruster and
+gravity forces.
+
+Setup:
+
+1. Install Scenic from this repository (editable).
+2. Install Basilisk with MuJoCo support and the ``asteroid-rl-demo`` requirements.
+3. Place ``asteroid-rl-demo`` as a sibling of the Scenic checkout, or set
+   ``ASTEROID_RL_ROOT``, or put it on ``PYTHONPATH``.
+
+Example scenarios live under :file:`examples/basilisk/`. Use the world model
+:obj:`scenic.simulators.basilisk.model` (``Spacecraft``, ``Asteroid``, throttle /
+pointing actions).
+
+
 CARLA
 -----
 
