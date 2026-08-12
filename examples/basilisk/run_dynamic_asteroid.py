@@ -134,7 +134,7 @@ def main() -> None:
         raise SystemExit("no successful samples")
     print("Open with: Vizard.exe -loadFile \"" + bins[-1] + "\"")
     if args.open_last:
-        from asteroid_rl.env import _find_vizard_app
+        from asteroid_rl.environment.gym_env import _find_vizard_app
 
         app = _find_vizard_app()
         if app:

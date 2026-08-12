@@ -81,7 +81,7 @@ class BasiliskBackend:
         return self._demo_root
 
     def _make_config(self):
-        from asteroid_rl.env import LandingEnvConfig
+        from asteroid_rl.environment.gym_env import LandingEnvConfig
 
         cfg = LandingEnvConfig()
         cfg.gravity_mode = str(self.config.gravity_mode)
@@ -107,7 +107,7 @@ class BasiliskBackend:
         sigma_BN: Optional[Sequence[float]] = None,
     ) -> None:
         """Stock Itokawa scene via ``asteroid_rl.env.build_sim``."""
-        from asteroid_rl.env import (
+        from asteroid_rl.environment.gym_env import (
             ASTEROID_BODY_NAME,
             SPACECRAFT_BODY_NAME,
             build_sim,
@@ -151,8 +151,8 @@ class BasiliskBackend:
         from Basilisk.simulation import mujoco, svIntegrators
         from Basilisk.utilities import SimulationBaseClass, macros
 
-        from asteroid_rl import gravity as gravity_mod
-        from asteroid_rl.env import (
+        from asteroid_rl.dynamics import gravity as gravity_mod
+        from asteroid_rl.environment.gym_env import (
             ASTEROID_BODY_NAME,
             SIM_DT,
             SIM_PROCESS_NAME,
@@ -404,7 +404,7 @@ class BasiliskBackend:
 
     def flush_controls(self) -> None:
         from Basilisk.architecture import messaging
-        from asteroid_rl.pointing import apply_pointing_direction
+        from asteroid_rl.dynamics.pointing import apply_pointing_direction
 
         if self.handles is None or self._hub is None:
             return

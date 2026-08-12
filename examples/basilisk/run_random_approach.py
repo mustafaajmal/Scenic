@@ -28,7 +28,7 @@ VIZ_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _find_vizard():
-    from asteroid_rl.env import _find_vizard_app
+    from asteroid_rl.environment.gym_env import _find_vizard_app
 
     return _find_vizard_app()
 

@@ -35,7 +35,7 @@ DEFAULT_BIN = VIZ_DIR / "scenic_soft_brake_UnityViz.bin"
 
 
 def _find_vizard() -> str | None:
-    from asteroid_rl.env import _find_vizard_app
+    from asteroid_rl.environment.gym_env import _find_vizard_app
 
     return _find_vizard_app()
 
