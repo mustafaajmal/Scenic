@@ -111,3 +111,57 @@ def test_dynamic_asteroid_scenario_runs():
     meta = getattr(sim.backend, "procedural_meta", {}) or {}
     assert meta.get("mode") == "procedural"
     assert meta.get("n_vertices", 0) > 0
+
+
+def test_altitude_brake_closed_loop():
+    import scenic
+
+    path = ROOT / "examples" / "basilisk" / "altitude_brake.scenic"
+    scenario = scenic.scenarioFromFile(str(path), params={"enable_viz": False})
+    scene, _ = scenario.generate(maxIterations=30)
+    sim = scenario.getSimulator().simulate(
+        scene, maxSteps=12, timestep=0.25, verbosity=0
+    )
+    assert sim is not None
+    assert len(sim.result.trajectory) >= 2
+    craft = next(
+        o for o in sim.objects if getattr(o, "basiliskKind", None) == "spacecraft"
+    )
+    assert craft.altitude is not None
+    assert float(craft.altitude) < 200.0
+
+
+def test_inline_compile_scenic_and_angular_props():
+    from scenic import scenarioFromString
+    from scenic.simulators.basilisk import getBasiliskSimulator
+
+    code = """
+model scenic.simulators.basilisk.model
+param use_flat_surface = True
+param flat_surface_z = -30.0
+param enable_viz = False
+param timestep = 0.25
+behavior B():
+    while True:
+        take SetThrottleAction(0.4)
+        wait
+ego = new Spacecraft at (0, 0, 70), with velocity (0, 0, -1.0), with behavior B
+terminate after 2 seconds
+"""
+    scenario = scenarioFromString(code)
+    scene, _ = scenario.generate(maxIterations=5)
+    sim = getBasiliskSimulator().simulate(scene, maxSteps=4, timestep=0.25, verbosity=0)
+    assert sim is not None
+    craft = next(
+        o for o in sim.objects if getattr(o, "basiliskKind", None) == "spacecraft"
+    )
+    # angularVelocity is wired (may be ~0 without torques, but must be a Vector)
+    assert hasattr(craft.angularVelocity, "x")
+    assert float(craft.speed) >= 0.0
+
+
+def test_env_shim_import():
+    from asteroid_rl.env import build_sim, LandingEnvConfig
+
+    assert build_sim is not None
+    assert LandingEnvConfig is not None

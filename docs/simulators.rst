@@ -71,20 +71,34 @@ Basilisk (asteroid landing)
 
 Scenic can drive a **Basilisk + MuJoCo** asteroid-landing simulation through
 :obj:`scenic.simulators.basilisk`. The dynamics backend is the sister
-``asteroid-rl-demo`` package (``asteroid_rl.env.build_sim``): Scenic samples
-initial geometry and runs behaviors/actions; Basilisk integrates thruster and
-gravity forces.
+``asteroid-rl-demo`` package (``asteroid_rl.environment.gym_env.build_sim``):
+Scenic samples initial geometry and runs behaviors/actions; Basilisk integrates
+thruster and gravity forces. The interface follows the same Scenic patterns as
+Webots/CARLA (world ``model``, ``Action`` classes, live ``getProperties``) and
+adds Mars-style procedural asteroids plus optional Vizard recording.
 
 Setup:
 
 1. Install Scenic from this repository (editable).
 2. Install Basilisk with MuJoCo support and the ``asteroid-rl-demo`` requirements.
 3. Place ``asteroid-rl-demo`` as a sibling of the Scenic checkout, or set
-   ``ASTEROID_RL_ROOT``, or put it on ``PYTHONPATH``.
+   ``ASTEROID_RL_ROOT`` / ``PYTHONPATH``, or pass ``param asteroid_rl_root``.
 
 Example scenarios live under :file:`examples/basilisk/`. Use the world model
-:obj:`scenic.simulators.basilisk.model` (``Spacecraft``, ``Asteroid``, throttle /
-pointing actions).
+:obj:`scenic.simulators.basilisk.model` (``Spacecraft``, ``Asteroid`` /
+``ProceduralAsteroid``, throttle / pointing actions).
+
+Quick start (headless)::
+
+    export ASTEROID_RL_ROOT=/path/to/asteroid-rl-demo
+    export PYTHONPATH=$ASTEROID_RL_ROOT
+    python -m scenic -S examples/basilisk/soft_brake.scenic
+    python -m scenic -S examples/basilisk/altitude_brake.scenic
+
+Useful global parameters: ``timestep``, ``gravity_mode``, ``max_thrust``,
+``use_flat_surface``, ``flat_surface_z``, ``enable_viz``, ``viz_mode``,
+``viz_save_file``, ``asteroid_rl_root``. Dynamic properties on ``Spacecraft``
+include ``throttle``, ``altitude``, and live ``angularVelocity`` from the hub.
 
 
 CARLA

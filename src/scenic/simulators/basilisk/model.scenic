@@ -18,8 +18,11 @@ param flat_surface_z = -30.0
 param enable_viz = False
 param viz_mode = 'auto'
 param viz_save_file = ''
+param timestep = 0.25
+param asteroid_rl_root = ''
 
 simulator BasiliskSimulator(
+    asteroid_rl_root=globalParameters.asteroid_rl_root,
     gravity_mode=globalParameters.gravity_mode,
     max_thrust=globalParameters.max_thrust,
     use_flat_surface=globalParameters.use_flat_surface,
@@ -27,6 +30,7 @@ simulator BasiliskSimulator(
     enable_viz=globalParameters.enable_viz,
     viz_mode=globalParameters.viz_mode,
     viz_save_file=globalParameters.viz_save_file,
+    default_timestep=globalParameters.timestep,
 )
 
 workspace = Workspace(BoxRegion(dimensions=(800, 800, 800), position=(0, 0, 0)))

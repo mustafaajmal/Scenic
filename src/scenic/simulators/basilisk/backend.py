@@ -443,6 +443,24 @@ class BasiliskBackend:
             return np.zeros(3)
         return np.array(self.handles.state_recorder.sigma_BN[-1], dtype=np.float64)
 
+    def read_omega_B(self) -> np.ndarray:
+        """Body-frame angular rate ``omega_BN_B`` (rad/s) from the state recorder."""
+        if self.handles is None:
+            return np.zeros(3)
+        rec = self.handles.state_recorder
+        if hasattr(rec, "omega_BN_B") and len(rec.times()) > 0:
+            return np.array(rec.omega_BN_B[-1], dtype=np.float64).reshape(3)
+        return np.zeros(3)
+
+    def read_omega_N(self) -> np.ndarray:
+        """Inertial-frame angular rate (rad/s) for Scenic ``angularVelocity``."""
+        from Basilisk.utilities import RigidBodyKinematics as rbk
+
+        omega_B = self.read_omega_B()
+        sigma = self.read_mrp()
+        c_bn = np.asarray(rbk.MRP2C(list(sigma)), dtype=np.float64)
+        return c_bn.T @ omega_B
+
     def landing_site(self) -> np.ndarray:
         if self._landing_site is not None:
             return np.asarray(self._landing_site, dtype=np.float64).reshape(3)

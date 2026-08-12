@@ -29,6 +29,13 @@ else:
 
 if Basilisk is not None:
     from .simulator import BasiliskSimulator, BasiliskSimulation
+
+    def getBasiliskSimulator(**kwargs):
+        """Factory mirroring MuJoCo's headless helper (defaults viz off)."""
+        kwargs.setdefault("enable_viz", False)
+        kwargs.setdefault("default_timestep", 0.25)
+        return BasiliskSimulator(**kwargs)
+
 else:  # pragma: no cover
 
     def BasiliskSimulator(*_args, **_kwargs):
@@ -36,3 +43,6 @@ else:  # pragma: no cover
             "Basilisk is required for scenic.simulators.basilisk "
             f"(import failed: {_import_error})"
         )
+
+    def getBasiliskSimulator(*_args, **_kwargs):
+        return BasiliskSimulator(*_args, **_kwargs)

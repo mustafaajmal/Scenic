@@ -55,8 +55,9 @@ class BasiliskSimulator(Simulator):
         default_timestep: float = 0.25,
     ):
         super().__init__()
+        root = asteroid_rl_root if asteroid_rl_root else None
         self.backend_config = BasiliskBackendConfig(
-            asteroid_rl_root=asteroid_rl_root,
+            asteroid_rl_root=root,
             gravity_mode=gravity_mode,
             max_thrust=max_thrust,
             use_flat_surface=use_flat_surface,
@@ -283,12 +284,14 @@ class BasiliskSimulation(Simulation):
         sigma = self.backend.read_mrp()
         yaw, pitch, roll = mrp_to_euler_zxy(sigma)
         speed = float(np.linalg.norm(v))
+        omega_N = self.backend.read_omega_N()
+        ang_speed = float(np.linalg.norm(omega_N))
         vals = {
             "position": vector3(r),
             "velocity": vector3(v),
             "speed": speed,
-            "angularVelocity": Vector(0, 0, 0),
-            "angularSpeed": 0.0,
+            "angularVelocity": vector3(omega_N),
+            "angularSpeed": ang_speed,
             "yaw": yaw,
             "pitch": pitch,
             "roll": roll,
@@ -298,10 +301,9 @@ class BasiliskSimulation(Simulation):
             vals["throttle"] = float(getattr(obj, "throttle", 0.0) or 0.0)
         if "altitude" in properties:
             site = self.backend.landing_site()
-            if self.backend.handles and self.backend.handles.config.use_flat_surface:
-                vals["altitude"] = float(r[2] - site[2])
-            else:
-                vals["altitude"] = float(r[2] - site[2])
+            # Flat pad: z above site. Procedural / heightmap: same pad-relative z
+            # until a surface query is wired through Scenic.
+            vals["altitude"] = float(r[2] - site[2])
         for prop in properties:
             if prop not in vals:
                 vals[prop] = getattr(obj, prop, None)
