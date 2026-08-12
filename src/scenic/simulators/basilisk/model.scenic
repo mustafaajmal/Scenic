@@ -16,6 +16,8 @@ param max_thrust = 275.0
 param use_flat_surface = False
 param flat_surface_z = -30.0
 param enable_viz = False
+param viz_mode = 'auto'
+param viz_save_file = ''
 
 simulator BasiliskSimulator(
     gravity_mode=globalParameters.gravity_mode,
@@ -23,6 +25,8 @@ simulator BasiliskSimulator(
     use_flat_surface=globalParameters.use_flat_surface,
     flat_surface_z=globalParameters.flat_surface_z,
     enable_viz=globalParameters.enable_viz,
+    viz_mode=globalParameters.viz_mode,
+    viz_save_file=globalParameters.viz_save_file,
 )
 
 # Large workspace so approach starts and the asteroid COM marker fit.

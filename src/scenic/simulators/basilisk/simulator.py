@@ -36,7 +36,9 @@ class BasiliskSimulator(Simulator):
         max_thrust: Peak thruster force in Newtons.
         use_flat_surface: Use flat pad altitude instead of Itokawa heightmap.
         flat_surface_z: World ``z`` of the flat pad when ``use_flat_surface``.
-        enable_viz: Forwarded to asteroid_rl (Vizard); Windows prefers save-file.
+        enable_viz: Forwarded to asteroid_rl (Vizard).
+        viz_mode: ``auto`` (save-file on Windows, live on macOS), ``live``, or ``file``.
+        viz_save_file: Optional ``.bin`` path when recording for Vizard ``-loadFile``.
         default_timestep: Used when ``simulate(..., timestep=None)``.
     """
 
@@ -48,6 +50,8 @@ class BasiliskSimulator(Simulator):
         use_flat_surface: bool = False,
         flat_surface_z: float = -30.0,
         enable_viz: bool = False,
+        viz_mode: str = "auto",
+        viz_save_file: str = "",
         default_timestep: float = 0.25,
     ):
         super().__init__()
@@ -58,6 +62,8 @@ class BasiliskSimulator(Simulator):
             use_flat_surface=use_flat_surface,
             flat_surface_z=flat_surface_z,
             enable_viz=enable_viz,
+            viz_mode=viz_mode,
+            viz_save_file=viz_save_file,
             control_dt=default_timestep,
         )
         self.default_timestep = float(default_timestep)

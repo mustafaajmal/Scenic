@@ -61,6 +61,8 @@ class BasiliskBackendConfig:
     use_flat_surface: bool = False
     flat_surface_z: float = -30.0
     enable_viz: bool = False
+    viz_mode: str = "auto"  # auto|live|file (Windows auto → file)
+    viz_save_file: str = ""
     control_dt: float = 0.25
 
 
@@ -100,6 +102,8 @@ class BasiliskBackend:
         cfg.use_flat_surface = bool(self.config.use_flat_surface)
         cfg.flat_surface_z = float(self.config.flat_surface_z)
         cfg.enable_viz = bool(self.config.enable_viz)
+        cfg.viz_mode = str(self.config.viz_mode)
+        cfg.viz_save_file = str(self.config.viz_save_file or "")
         cfg.control_dt = float(self.config.control_dt)
         cfg.reuse_sim = True
         if cfg.gravity_mode == "central":

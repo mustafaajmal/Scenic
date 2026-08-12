@@ -17,11 +17,28 @@ Research/
   asteroid-rl-demo/
 ```
 
-## Run
+## Visualize (Vizard)
 
-```bash
-export PYTHONPATH=/path/to/asteroid-rl-demo:$PYTHONPATH
-python examples/basilisk/run_soft_brake.py
+On **Windows**, live ZeroMQ often crashes; the safe path is **save-file**:
+
+```powershell
+cd C:\Users\Mustafa Ajmal\Desktop\Research\Scenic
+$env:ASTEROID_RL_ROOT = "C:\Users\Mustafa Ajmal\Desktop\Research\asteroid-rl-demo"
+$env:PYTHONPATH = $env:ASTEROID_RL_ROOT
+..\asteroid-rl-demo\.venv\Scripts\python.exe examples\basilisk\run_with_viz.py --file --open
+```
+
+That records `outputs/viz/scenic_soft_brake_UnityViz.bin` and tries to launch
+`Vizard.exe -loadFile ...`. You can also open the `.bin` from Vizard manually.
+
+On **macOS**, omit `--file` for liveStream (`param enable_viz = True` in
+`soft_brake_viz.scenic`).
+
+Or set in a scenario:
+
+```scenic
+param enable_viz = True
+param viz_mode = 'auto'   # or 'file' / 'live'
 ```
 
 Or compile/simulate from Python:
