@@ -1,35 +1,25 @@
-# HANDOFF — toward end-state case study (2026-08-19)
+# HANDOFF — gap closed (2026-08-19)
 
-## Status vs PI MINIMUM / end result
+## You do **not** need to do more for the MINIMUM / remaining gap
 
-| Goal | Status |
-|------|--------|
-| Eval fixed policy on Scenic scenarios | **Done** (Scenic-native harness) |
-| Irregular terrain (sphere→ellipsoid→bumpy) | **Done** |
-| Radar-like altitude to real surface | **Done** (mesh raycast) |
-| Architecture I/O writeup | **Done** (`ARCHITECTURE.md`) |
-| Interesting easy/hard distinction | **Done** — see `RESULTS.md` |
-| Train policy on Scenic scenarios | **Partial** — CLI exists; Gym physics still stock mesh |
-| Avoid camera/VLM | **Done** |
+The last engineering hole is filled: Gym resets that use a Scenic scenario now
+call `build_procedural_sim`, so MuJoCo loads the **same procedural rock** Scenic
+sampled (not stock Itokawa).
 
-## What to show the PI
-Open **`examples/basilisk/RESULTS.md`**. Headline table: sphere/ellipsoid
-100% reach but never soft; bumpy 67% reach but all soft when contacting.
+## What to show
+1. `examples/basilisk/RESULTS.md` — tables A (Scenic-native) and B (Gym train)
+2. `examples/basilisk/ARCHITECTURE.md` — I/O, GT, controls, reward
+
+## Optional (nice, not blocking)
+- Longer PPO train (`--timesteps 50000`) for stronger transfer numbers
+- More eval episodes for tighter confidence intervals
+- Vizard recordings of bumpy vs sphere for slides
 
 ## Commands
 ```bash
-# Primary case study
-python examples/basilisk/run_scenic_policy_eval.py --episodes 12 --seed 0
-
-# Gym Scenic resets (altitude fixed; physics still stock)
-python -m asteroid_rl.cli.train_scenic_curriculum --timesteps 8000
+cd asteroid-rl-demo
+export SCENIC_ROOT=../Scenic PYTHONPATH=../Scenic/src:.
+.venv/Scripts/python.exe -m asteroid_rl.cli.train_scenic_curriculum \
+  --timesteps 5000 --eval-episodes 4 --seed 2 \
+  --out-dir outputs/scenic_curriculum_v3
 ```
-
-## Next engineering step (biggest remaining gap)
-Rebuild MuJoCo/Basilisk scene from Scenic procedural OBJ **inside Gym reset**
-(reuse `BasiliskBackend.build_procedural`) so train/eval share the same rock
-geometry as the Scenic harness. Then PPO curriculum will be meaningful.
-
-## Pushed branches
-- Scenic `basilisk-simulator`
-- asteroid-rl-demo `master`
