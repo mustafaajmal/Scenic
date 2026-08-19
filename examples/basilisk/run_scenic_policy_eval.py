@@ -33,17 +33,23 @@ CURRICULUM = {
     "bumpy": Path(__file__).with_name("curriculum") / "bumpy.scenic",
 }
 
-# Low-threshold "interesting" safe landing (PI: not uniformly perfect).
-SUCCESS_ALT_MAX = 8.0
-SUCCESS_ALT_MIN = 0.3
-SUCCESS_SPEED = 3.5  # scripted soft-brake is coarse; still separates stages
+# Dual gates: contact = reached surface band; soft = contact + slow enough.
+CONTACT_ALT_MAX = 8.0
+CONTACT_ALT_MIN = 0.3
+SOFT_SPEED = 2.8
+REACH_SPEED = 3.5  # looser — scripted often arrives ~3.0–3.2 m/s
 
 
-def _safe_landing(final_alt: float, final_speed: float) -> bool:
-    return (
-        SUCCESS_ALT_MIN <= float(final_alt) <= SUCCESS_ALT_MAX
-        and float(final_speed) <= SUCCESS_SPEED
-    )
+def _contact_ok(final_alt: float) -> bool:
+    return CONTACT_ALT_MIN <= float(final_alt) <= CONTACT_ALT_MAX
+
+
+def _soft_ok(final_alt: float, final_speed: float) -> bool:
+    return _contact_ok(final_alt) and float(final_speed) <= SOFT_SPEED
+
+
+def _reach_ok(final_alt: float, final_speed: float) -> bool:
+    return _contact_ok(final_alt) and float(final_speed) <= REACH_SPEED
 
 
 def _series_values(records: dict, key: str) -> list[float]:
@@ -115,11 +121,16 @@ def run_stage(stage: str, episodes: int, seed: int, max_steps: int) -> list[dict
         max_speed = float(max(speeds)) if speeds else float("nan")
         throttle = float(throttles[-1]) if throttles else 0.0
         # Prefer "reached soft band" anytime in the episode (not only last step).
-        safe = False
+        soft = False
+        reach = False
+        contact = False
         for a, sp in zip(alts, speeds):
-            if _safe_landing(a, sp):
-                safe = True
-                break
+            if _contact_ok(a):
+                contact = True
+            if _soft_ok(a, sp):
+                soft = True
+            if _reach_ok(a, sp):
+                reach = True
         row = {
             "stage": stage,
             "episode": i,
@@ -139,15 +150,18 @@ def run_stage(stage: str, episodes: int, seed: int, max_steps: int) -> list[dict
             "final_speed_mps": speed,
             "max_speed_mps": max_speed,
             "final_throttle": throttle,
-            "safe_landing": bool(safe),
-            "termination": "safe_landing" if safe else "fail",
+            "contact_ok": bool(contact),
+            "reach_ok": bool(reach),
+            "soft_ok": bool(soft),
+            "safe_landing": bool(reach),  # primary MINIMUM metric
+            "termination": "safe_landing" if reach else "fail",
             "n_steps": len(getattr(sim.result, "trajectory", []) or []),
             "surface_mode": "mesh_raycast",
         }
         rows.append(row)
         print(
-            f"  [{stage} ep{i}] final_alt={alt:.2f} min_alt={min_alt:.2f} "
-            f"speed={speed:.2f} safe={safe} seed={s}"
+            f"  [{stage} ep{i}] alt={alt:.2f} min={min_alt:.2f} spd={speed:.2f} "
+            f"reach={reach} soft={soft} seed={s}"
         )
     return rows
 
@@ -175,8 +189,8 @@ def main() -> None:
 
     print("MINIMUM Scenic policy eval (scripted soft-brake vs curriculum)\n")
     print(
-        f"Safe landing: {SUCCESS_ALT_MIN}<=alt<={SUCCESS_ALT_MAX} m, "
-        f"speed<={SUCCESS_SPEED} m/s\n"
+        f"contact: {CONTACT_ALT_MIN}<=alt<={CONTACT_ALT_MAX} m; "
+        f"reach: +speed<={REACH_SPEED}; soft: +speed<={SOFT_SPEED}\n"
     )
 
     all_rows: list[dict] = []
@@ -185,15 +199,24 @@ def main() -> None:
         print(f"=== stage: {stage} ===")
         rows = run_stage(stage, args.episodes, args.seed, args.max_steps)
         all_rows.extend(rows)
-        ok = sum(1 for r in rows if r.get("safe_landing"))
+        n = max(len(rows), 1)
         summary[stage] = {
             "episodes": len(rows),
-            "safe_landings": ok,
-            "safe_rate": ok / max(len(rows), 1),
+            "contact_rate": sum(1 for r in rows if r.get("contact_ok")) / n,
+            "reach_rate": sum(1 for r in rows if r.get("reach_ok")) / n,
+            "soft_rate": sum(1 for r in rows if r.get("soft_ok")) / n,
+            "mean_final_speed": float(
+                np.nanmean([r.get("final_speed_mps", np.nan) for r in rows])
+            ),
+            "mean_min_alt": float(
+                np.nanmean([r.get("min_altitude_m", np.nan) for r in rows])
+            ),
         }
         print(
-            f"  → {ok}/{len(rows)} safe "
-            f"({100.0 * summary[stage]['safe_rate']:.0f}%)\n"
+            f"  → contact={100*summary[stage]['contact_rate']:.0f}%  "
+            f"reach={100*summary[stage]['reach_rate']:.0f}%  "
+            f"soft={100*summary[stage]['soft_rate']:.0f}%  "
+            f"mean_spd={summary[stage]['mean_final_speed']:.2f}\n"
         )
 
     with out.open("w", newline="", encoding="utf-8") as f:
