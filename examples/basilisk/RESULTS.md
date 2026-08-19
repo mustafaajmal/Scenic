@@ -37,15 +37,23 @@ Short PPO train on sphere (5k steps), then eval — `outputs/scenic_curriculum_v
    no camera/VLM required.
 
 ## Reproduce
-```bash
-# Scenic-native
-cd Scenic
-../asteroid-rl-demo/.venv/Scripts/python.exe \
-  examples/basilisk/run_scenic_policy_eval.py --episodes 12 --seed 0
+See **`MVP.md`** for the writeup entry point. Short form:
 
-# Gym procedural train + curriculum eval
+```bash
+cd Scenic
+source ../asteroid-rl-demo/.venv/Scripts/activate
+export ASTEROID_RL_ROOT=../asteroid-rl-demo SCENIC_ROOT=$PWD
+export PYTHONPATH=$PWD/src:$ASTEROID_RL_ROOT
+
+# One command: eval (A) + progressive curriculum train (B)
+python examples/basilisk/run_mvp.py --mode both --episodes 5 --seed 0 \
+  --timesteps-per-stage 4000 --eval-episodes 4
+```
+
+Legacy single-scenario train (sphere only)::
+
+```bash
 cd asteroid-rl-demo
-export SCENIC_ROOT=../Scenic PYTHONPATH=../Scenic/src:.
-.venv/Scripts/python.exe -m asteroid_rl.cli.train_scenic_curriculum \
+python -m asteroid_rl.cli.train_scenic_curriculum \
   --timesteps 5000 --eval-episodes 4 --seed 2
 ```
