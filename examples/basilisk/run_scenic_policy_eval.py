@@ -231,7 +231,12 @@ def main() -> None:
     )
     parser.add_argument("--episodes", type=int, default=5, help="Episodes per stage")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--max-steps", type=int, default=240)
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help="Sim steps (timestep 0.25s). Default 240 (~60s); with --divert default 720 (~180s).",
+    )
     parser.add_argument(
         "--stages",
         nargs="+",
@@ -269,6 +274,8 @@ def main() -> None:
         help="Use curriculum_divert (MODE C miss traj/attitude) instead of inbound soft-brake",
     )
     args = parser.parse_args()
+    if args.max_steps is None:
+        args.max_steps = 720 if args.divert else 240
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

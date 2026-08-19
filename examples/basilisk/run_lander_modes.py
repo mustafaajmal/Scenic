@@ -65,7 +65,12 @@ def main() -> None:
     p.add_argument("--all-modes", action="store_true", help="Run A/B/C sequentially")
     p.add_argument("--episodes", type=int, default=4)
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--max-steps", type=int, default=360)
+    p.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help="Sim steps at 0.25s. Default 360 (~90s); divert/all-modes default 720 (~180s).",
+    )
     p.add_argument("--viz", action="store_true")
     p.add_argument("--open-viz", action="store_true")
     p.add_argument(
@@ -74,6 +79,10 @@ def main() -> None:
         help="Use legacy MRP teleport instead of rate-limited slew",
     )
     args = p.parse_args()
+    if args.max_steps is None:
+        args.max_steps = (
+            720 if (args.all_modes or args.mode == "divert") else 360
+        )
 
     import scenic
 

@@ -39,4 +39,4 @@ record ego.throttle as throttle
 record ego.position.z as z_m
 
 terminate when ego.landed or ego.inContact or ego.altitude < 0.35
-terminate after 120 seconds
+terminate after 180 seconds

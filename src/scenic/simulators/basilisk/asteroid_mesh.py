@@ -274,10 +274,35 @@ def world_surface_altitude(
 
     This is the PI-requested “radar straight down to the real surface” for an
     irregular rock (not a spherical shell or flat pad).
+
+    If the craft origin is *inside* the mesh, returns a negative penetration
+    depth (signed). A nadir raycast from inside would otherwise hit the far
+    side and report a huge positive altitude, which breaks contact correction.
     """
     craft = np.asarray(craft_world, dtype=np.float64).reshape(3)
     ast = np.asarray(asteroid_world, dtype=np.float64).reshape(3)
     origin_local = craft - ast
+    try:
+        inside = bool(np.asarray(mesh.contains([origin_local]), dtype=bool).reshape(-1)[0])
+    except Exception:
+        inside = False
+    if inside:
+        try:
+            import trimesh
+
+            # |signed_distance| = distance to surface. Sign convention varies by
+            # trimesh version; we already know we are inside → negative altitude.
+            sd = float(
+                np.asarray(
+                    trimesh.proximity.signed_distance(mesh, origin_local.reshape(1, 3)),
+                    dtype=np.float64,
+                ).reshape(-1)[0]
+            )
+            if np.isfinite(sd):
+                return -abs(sd)
+        except Exception:
+            pass
+        return -1.0
     direction = ast - craft  # toward the body
     hit = raycast_surface_distance(mesh, origin_local, direction)
     if hit is None:
@@ -417,13 +442,16 @@ def write_landing_xml(
     ax, ay, az = [float(x) for x in asteroid_pos]
     s = float(mesh_scale)
     col_file = collision_mesh_filename or mesh_filename
+    # Hard contacts: small solref timeconst + high solimp. Soft defaults
+    # (solref≈0.02) look like a sponge and let the hub sink into the rock.
     xml = f"""<mujoco>
-  <option gravity="0 0 0" timestep="0.01" cone="elliptic" solver="Newton" iterations="50"/>
+  <option gravity="0 0 0" timestep="0.01" cone="elliptic" solver="Newton" iterations="80"
+          tolerance="1e-10"/>
   <compiler meshdir="."/>
 
   <default class="main">
-    <geom contype="1" conaffinity="1" condim="3" friction="1.5 0.1 0.001"
-          solref="0.02 2.5" solimp="0.999 0.999 0.001"/>
+    <geom contype="1" conaffinity="1" condim="3" friction="1.5 0.1 0.001" margin="0.02"
+          solref="0.004 1" solimp="0.99 0.999 0.0001"/>
     <default class="panel">
       <geom type="box" pos="0 0 2" size="1.1 0.05 2" rgba="0 1 0 1"/>
     </default>
@@ -467,8 +495,8 @@ def write_landing_xml(
       <geom name="asteroid_visual" type="mesh" mesh="asteroid_visual"
             contype="0" conaffinity="0" rgba="0.55 0.45 0.35 1"/>
       <geom name="asteroid_collision" type="mesh" mesh="asteroid_collision"
-            contype="1" conaffinity="1" condim="3"
-            solref="0.02 2.5" solimp="0.999 0.999 0.001"
+            contype="1" conaffinity="1" condim="3" margin="0.02"
+            solref="0.004 1" solimp="0.99 0.999 0.0001"
             friction="1.8 0.1 0.001" rgba="0.55 0.45 0.35 0"/>
     </body>
   </worldbody>

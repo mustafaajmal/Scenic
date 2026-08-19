@@ -509,15 +509,18 @@ class BasiliskBackend:
         return self._last_guidance
 
     def enforce_surface_contact(self) -> None:
-        """Unilateral contact: stick to the surface (no bounce).
+        """Unilateral contact: stick to the surface (no bounce / no sink).
 
-        On contact: place craft at the contact altitude, zero velocity/rates,
-        cut thrust, and latch ``_landed`` so later steps freeze the hub.
+        On contact: place craft at ``SURFACE_STANDOFF_M`` above the visual mesh
+        (hub half-extent ≈ 1 m — do not freeze the origin at ~0.35 m or the
+        box clips through), zero velocity/rates, cut thrust, and latch
+        ``_landed`` so later steps freeze the hub without MuJoCo soft-contact
+        spring-back.
         """
         from scenic.simulators.basilisk.guidance import (
-            CONTACT_ALT_M,
             SETTLE_ALT_MAX_M,
             SETTLE_SPEED_MPS,
+            SURFACE_STANDOFF_M,
             unit,
         )
 
@@ -538,16 +541,34 @@ class BasiliskBackend:
         else:
             n_hat = np.array([0.0, 0.0, 1.0], dtype=np.float64)
 
-        # Stick once in the soft-land band at low speed, or on hard contact.
-        soft_stick = alt <= SETTLE_ALT_MAX_M and speed <= min(SETTLE_SPEED_MPS, 1.5)
-        hard_contact = alt < CONTACT_ALT_M
+        standoff = float(SURFACE_STANDOFF_M)
+        # Stick once in the soft-land band at low speed, or once the hub would
+        # intersect the rock (alt below standoff, including negative = inside).
+        soft_stick = (
+            0.0 <= alt <= SETTLE_ALT_MAX_M and speed <= min(SETTLE_SPEED_MPS, 1.5)
+        )
+        hard_contact = alt < standoff
         if soft_stick or hard_contact:
             self._in_contact = True
-            # Place on/above the contact shell; never leave residual velocity.
-            if alt < CONTACT_ALT_M:
-                new_r = r + n_hat * (CONTACT_ALT_M - alt)
-            else:
-                new_r = r
+            # Snap to a radial shell: surface_radius(n) + standoff.
+            # Do not use (standoff - alt) with closest-point altitude — that
+            # mismatches nadir raycast on faceted meshes and can leave the hub
+            # sunk.
+            new_r = r
+            if alt < standoff and self._procedural_mesh is not None and self._asteroid_pos_N is not None:
+                from scenic.simulators.basilisk.asteroid_mesh import (
+                    raycast_surface_distance,
+                )
+
+                r_surf = raycast_surface_distance(
+                    self._procedural_mesh, np.zeros(3), n_hat
+                )
+                if r_surf is not None and np.isfinite(r_surf):
+                    new_r = self._asteroid_pos_N + n_hat * (float(r_surf) + standoff)
+                else:
+                    new_r = r + n_hat * (standoff - alt)
+            elif alt < standoff:
+                new_r = r + n_hat * (standoff - alt)
             try:
                 self._hub.setPosition([float(x) for x in new_r])
                 self._hub.setVelocity([0.0, 0.0, 0.0])

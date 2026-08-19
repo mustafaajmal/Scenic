@@ -19,7 +19,11 @@ from Basilisk.utilities import RigidBodyKinematics as rbk
 BORESIGHT_B = np.array([0.0, 0.0, -1.0], dtype=np.float64)
 
 # Soft-land / contact gates (meters, m/s).
-CONTACT_ALT_M = 0.35
+# Hub box is size="1 1 1" (1 m half-extent). Freezing the *origin* at 0.35 m
+# leaves the body geom buried in the rock — use a standoff at/above that half-extent.
+HUB_HALF_EXTENT_M = 1.0
+SURFACE_STANDOFF_M = 1.15  # freeze hub origin this far above the visual surface
+CONTACT_ALT_M = SURFACE_STANDOFF_M  # treat as contact / cut thrust
 SETTLE_ALT_MAX_M = 8.0
 SETTLE_SPEED_MPS = 3.5
 HOVER_THROTTLE = 200.0 / 275.0  # ≈ cancels Phase-1 constant weight
