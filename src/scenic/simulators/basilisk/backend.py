@@ -74,6 +74,8 @@ class BasiliskBackend:
         self._pending_throttle: float = 0.0
         self._pending_point_dir: Optional[np.ndarray] = None
         self._asset_dir: Optional[Path] = None
+        self._procedural_mesh: Any = None
+        self._asteroid_pos_N: Optional[np.ndarray] = None
         self.procedural_meta: dict = {}
 
     @property
@@ -130,6 +132,8 @@ class BasiliskBackend:
         self._pending_throttle = 0.0
         self._pending_point_dir = None
         self.procedural_meta = {"mode": "stock_itokawa"}
+        self._procedural_mesh = None
+        self._asteroid_pos_N = None
 
     def build_procedural(
         self,
@@ -212,6 +216,9 @@ class BasiliskBackend:
             noise_amp=float(noise_amp),
             noise_seed=int(detail_seed),
         )
+        self._procedural_mesh = mesh
+        ast = np.asarray(asteroid_position_N, dtype=np.float64).reshape(3)
+        self._asteroid_pos_N = ast.copy()
         obj_path = write_obj(mesh, work / "procedural_asteroid.obj")
         tex_path = write_albedo_texture(mesh, work / "procedural_asteroid.jpg")
         xml_path = write_landing_xml(
@@ -339,7 +346,32 @@ class BasiliskBackend:
             "noise_amp": float(noise_amp),
             "n_vertices": int(len(mesh.vertices)),
             "extents": [float(x) for x in mesh.extents],
+            "surface_altitude": "mesh_raycast",
         }
+
+    def surface_altitude(self, craft_position_N: Sequence[float]) -> float:
+        """Radar-like range from craft to the real surface (mesh or heightmap)."""
+        from scenic.simulators.basilisk.asteroid_mesh import world_surface_altitude
+
+        craft = np.asarray(craft_position_N, dtype=np.float64).reshape(3)
+        site = self.landing_site()
+        pad_fallback = float(craft[2] - site[2])
+        if self._procedural_mesh is not None and self._asteroid_pos_N is not None:
+            return world_surface_altitude(
+                self._procedural_mesh,
+                craft_world=craft,
+                asteroid_world=self._asteroid_pos_N,
+                fallback=pad_fallback,
+            )
+        # Stock Itokawa: heightmap column altitude (closest available to radar).
+        try:
+            from asteroid_rl.environment.surface import get_surface_map
+
+            if self.handles and not bool(self.handles.config.use_flat_surface):
+                return float(get_surface_map().altitude(craft))
+        except Exception:
+            pass
+        return pad_fallback
 
     def soft_reset(
         self,

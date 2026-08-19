@@ -223,6 +223,116 @@ def generate_asteroid_mesh(
     return mesh
 
 
+def raycast_surface_distance(
+    mesh,
+    origin_local: Sequence[float],
+    direction_local: Sequence[float],
+    *,
+    max_range: float = 2000.0,
+) -> Optional[float]:
+    """Nadir-style range to the mesh (asteroid-local frame).
+
+    Args:
+        mesh: Closed ``trimesh.Trimesh`` in asteroid-local coordinates.
+        origin_local: Ray origin in asteroid-local meters.
+        direction_local: Ray direction (will be normalized); typically toward COM.
+        max_range: Clip distance, meters.
+
+    Returns:
+        Distance to first hit, or ``None`` if no hit within ``max_range``.
+    """
+    o = np.asarray(origin_local, dtype=np.float64).reshape(3)
+    d = np.asarray(direction_local, dtype=np.float64).reshape(3)
+    n = float(np.linalg.norm(d))
+    if n < 1e-12:
+        return None
+    d = d / n
+    try:
+        locations, index_ray, _index_tri = mesh.ray.intersects_location(
+            ray_origins=o.reshape(1, 3),
+            ray_directions=d.reshape(1, 3),
+        )
+    except Exception:
+        return None
+    if locations is None or len(locations) == 0:
+        return None
+    dists = np.linalg.norm(locations - o.reshape(1, 3), axis=1)
+    hit = float(np.min(dists))
+    if hit > float(max_range) or not np.isfinite(hit):
+        return None
+    return hit
+
+
+def world_surface_altitude(
+    mesh,
+    *,
+    craft_world: Sequence[float],
+    asteroid_world: Sequence[float],
+    fallback: Optional[float] = None,
+) -> float:
+    """Altitude = distance along craft→asteroid ray to the mesh surface.
+
+    This is the PI-requested “radar straight down to the real surface” for an
+    irregular rock (not a spherical shell or flat pad).
+    """
+    craft = np.asarray(craft_world, dtype=np.float64).reshape(3)
+    ast = np.asarray(asteroid_world, dtype=np.float64).reshape(3)
+    origin_local = craft - ast
+    direction = ast - craft  # toward the body
+    hit = raycast_surface_distance(mesh, origin_local, direction)
+    if hit is None:
+        if fallback is not None:
+            return float(fallback)
+        # Spherical-shell fallback from mesh extents.
+        approx_r = 0.5 * float(np.mean(np.asarray(mesh.extents, dtype=np.float64)))
+        return max(float(np.linalg.norm(origin_local)) - approx_r, 0.0)
+    return float(hit)
+
+
+def bake_heightmap_npz(
+    mesh,
+    *,
+    asteroid_world: Sequence[float],
+    res: float = 2.0,
+    pad: float = 5.0,
+) -> Tuple[np.ndarray, float, float, float]:
+    """Bake top-down max-z heightmap in world frame for ``SurfaceMap``-style queries.
+
+    Returns:
+        ``(H, xmin, ymin, res)`` where ``H[iy, ix]`` is world ``z``.
+    """
+    ast = np.asarray(asteroid_world, dtype=np.float64).reshape(3)
+    verts = np.asarray(mesh.vertices, dtype=np.float64) + ast.reshape(1, 3)
+    xmin = float(verts[:, 0].min() - pad)
+    xmax = float(verts[:, 0].max() + pad)
+    ymin = float(verts[:, 1].min() - pad)
+    ymax = float(verts[:, 1].max() + pad)
+    res = max(float(res), 0.5)
+    nx = int(np.ceil((xmax - xmin) / res)) + 1
+    ny = int(np.ceil((ymax - ymin) / res)) + 1
+    H = np.full((ny, nx), np.nan, dtype=np.float64)
+    for v in verts:
+        ix = int(round((float(v[0]) - xmin) / res))
+        iy = int(round((float(v[1]) - ymin) / res))
+        if 0 <= ix < nx and 0 <= iy < ny:
+            cur = H[iy, ix]
+            if not np.isfinite(cur) or float(v[2]) > cur:
+                H[iy, ix] = float(v[2])
+    # Fill NaNs with column-wise nearest finite (cheap).
+    for iy in range(ny):
+        row = H[iy]
+        finite = np.isfinite(row)
+        if not np.any(finite):
+            continue
+        idx = np.where(finite, np.arange(nx), 0)
+        np.maximum.accumulate(idx, out=idx)
+        row[~finite] = row[idx[~finite]]
+        # back-fill leading NaNs
+        first = int(np.argmax(np.isfinite(row)))
+        row[:first] = row[first]
+    return H, xmin, ymin, res
+
+
 def write_obj(mesh, path: Path) -> Path:
     """Write mesh to Wavefront OBJ for MuJoCo ``<mesh file=...>``."""
     path = Path(path)

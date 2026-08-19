@@ -300,10 +300,7 @@ class BasiliskSimulation(Simulation):
         if "throttle" in properties:
             vals["throttle"] = float(getattr(obj, "throttle", 0.0) or 0.0)
         if "altitude" in properties:
-            site = self.backend.landing_site()
-            # Flat pad: z above site. Procedural / heightmap: same pad-relative z
-            # until a surface query is wired through Scenic.
-            vals["altitude"] = float(r[2] - site[2])
+            vals["altitude"] = float(self.backend.surface_altitude(r))
         for prop in properties:
             if prop not in vals:
                 vals[prop] = getattr(obj, prop, None)

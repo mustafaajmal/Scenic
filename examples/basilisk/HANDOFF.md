@@ -1,83 +1,64 @@
-# Basilisk ↔ Scenic integration handoff (2026-08-12)
+# HANDOFF — MINIMUM Scenic policy experiment (2026-08-19)
 
-Branch: **`basilisk-simulator`** (Scenic fork `mustafaajmal/Scenic`)  
-Sister demo: **`asteroid-rl-demo` `master`** (Vizard overrides + `asteroid_rl.env` shim)
+## How far from MINIMUM were we?
 
-Planning PDF (`Scripts Planning Document`) was not found under Downloads on this
-machine; work followed the Mars/MuJoCo Scenic patterns already in-repo plus the
-asteroid landing stack in `WORK_DIARY.md`.
+~70% before this pass. RL train/eval and Scenic procedural rocks existed, but:
 
-## Goal this session
+- Scenic altitude was **pad-Z**, not real surface  
+- `scenic_reset` did **not** call Scenic  
+- No curriculum eval harness tying a fixed policy to Scenic scenarios  
 
-Make the Basilisk Scenic interface feel as seamless as MuJoCo Scenic (PR #433 /
-Webots-style): live dynamic properties, documented `scenic -S` path, closed-loop
-behaviors, procedural rocks that actually show up in Vizard, and fewer import
-gotchas after the asteroid_rl package reorg.
+## MINIMUM (now implemented)
 
-## What landed
+> Evaluate a fixed policy against Scenic-generated scenarios (curriculum).
 
-### Scenic (`basilisk-simulator`)
+| Piece | Status |
+|-------|--------|
+| Mesh “radar” altitude (raycast craft→rock) | Done |
+| Curriculum sphere → ellipsoid → bumpy | Done |
+| Fixed scripted policy + safe-landing rates | Done |
+| Scenic `record` time series | Done |
+| Gym `scenic_scenario_path` real `generate()` | Done |
+| Architecture I/O writeup | `ARCHITECTURE.md` |
+| Train on Scenic ICs | Hook ready (`scenic_scenario_path`); full procedural-Gym train still next |
 
-| Area | Change |
-|------|--------|
-| Live state | `angularVelocity` / `angularSpeed` from hub `omega_BN_B` → inertial |
-| Params | `param timestep`, `param asteroid_rl_root` wired through `model.scenic` |
-| Closed-loop | `examples/basilisk/altitude_brake.scenic` reacts to `ego.altitude` |
-| Record | `examples/basilisk/record_altitude.scenic` records altitude/throttle/speed |
-| Procedural rock | bumps + craters + ridges + FBM noise + baked albedo JPG for Vizard |
-| Vizard | uses **generated** OBJ at scale 1 (not stock Itokawa overlay) |
-| API polish | `getBasiliskSimulator()` helper; README + `docs/simulators.rst` CLI snippets |
-| Tests | altitude closed-loop, inline `scenarioFromString`, env shim, mesh/features |
-| Seeded runs | `run_dynamic_asteroid.py --seed N` (sample `i` uses `seed+i`) |
+### Smoke result (seed=11, 5 eps/stage)
 
-### asteroid-rl-demo (`master`)
+| Stage | Safe rate |
+|-------|-----------|
+| sphere | 5/5 (100%) |
+| ellipsoid | 4/5 (80%) |
+| bumpy | 5/5 (100%) |
 
-| Area | Change |
-|------|--------|
-| Vizard | `_setup_vizard(..., viz_asteroid_model_path/texture_path/scale)` |
-| Compat | `asteroid_rl/env.py` re-exports `environment.gym_env` after reorg |
+Interesting distinction already appears (ellipsoid miss). Bumpy still “easy” with the loose speed gate — tighten later for clearer hardness ordering.
 
-## How to run (Git Bash)
+## Commands
 
 ```bash
 cd "/c/Users/Mustafa Ajmal/Desktop/Research/Scenic"
 export ASTEROID_RL_ROOT="/c/Users/Mustafa Ajmal/Desktop/Research/asteroid-rl-demo"
-export PYTHONPATH="$ASTEROID_RL_ROOT"
+export PYTHONPATH="$ASTEROID_RL_ROOT:$PWD/src"
 
-# One-liner (MuJoCo-style)
-../asteroid-rl-demo/.venv/Scripts/python.exe -m scenic -S examples/basilisk/altitude_brake.scenic
+../asteroid-rl-demo/.venv/Scripts/python.exe \
+  examples/basilisk/run_scenic_policy_eval.py --episodes 5 --seed 11
 
-# Procedural rock + Vizard save-files
-../asteroid-rl-demo/.venv/Scripts/python.exe examples/basilisk/run_dynamic_asteroid.py --samples 3 --seed 42 --open-last
+# Gym path with Scenic resets
+cd ../asteroid-rl-demo
+.venv/Scripts/python.exe -m asteroid_rl.cli.evaluate_scenic \
+  --scenario ../Scenic/examples/basilisk/curriculum/sphere.scenic \
+  --episodes 5 --policy scripted
 ```
 
-## Architecture (division of labor)
+## Read next
 
-```
-Scenic .scenic  →  sample pose / terrain / behaviors / Actions
-       ↓
-BasiliskSimulation.setup / step / getProperties
-       ↓
-asteroid_rl gym_env (build_sim | build_procedural) + Vizard
-       ↓
-Basilisk + MuJoCo physics
-```
+1. `examples/basilisk/ARCHITECTURE.md` — GT, controls, reward, obs  
+2. This file — MINIMUM status  
+3. Open: bake procedural heightmap into Gym `SurfaceMap` for train-on-bumps; optional PPO zip eval  
 
-RL training still lives in **asteroid-rl-demo**, not inside Scenic. Next glue is
-`scenic_reset` → real `scenario.generate()`.
+## Key new files
 
-## Not done / next
-
-- [ ] Wire `asteroid_rl.dynamics.scenic_reset` to real Scenic `ProceduralAsteroid` / approach scenes.
-- [ ] Surface-relative altitude (Itokawa heightmap / procedural radial shell) instead of pad `z` only.
-- [ ] Optional `sensors.py` RGB observations (needs live Vizard; fragile on Windows).
-- [ ] Upstream PR to BerkeleyLearnVerify/Scenic when ready.
-- [ ] Planning PDF was missing locally — re-check against it for any checklist items not covered.
-
-## Key files
-
-- `src/scenic/simulators/basilisk/{model.scenic,simulator.py,backend.py,asteroid_mesh.py,actions.py}`
-- `examples/basilisk/{altitude_brake,record_altitude,dynamic_asteroid}.scenic`
-- `examples/basilisk/HANDOFF.md` (this file)
-- `asteroid_rl/environment/gym_env.py` (`_setup_vizard` overrides)
-- `asteroid_rl/env.py` (compat shim)
+- `asteroid_mesh.py` — `raycast_surface_distance`, `world_surface_altitude`, `bake_heightmap_npz`  
+- `curriculum/{sphere,ellipsoid,bumpy}.scenic`  
+- `run_scenic_policy_eval.py`  
+- `asteroid_rl/cli/evaluate_scenic.py`  
+- `asteroid_rl/dynamics/scenic_reset.py` — `sample_scenic_scenario_start`  

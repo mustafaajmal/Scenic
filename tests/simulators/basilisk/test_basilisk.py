@@ -160,6 +160,20 @@ terminate after 2 seconds
     assert float(craft.speed) >= 0.0
 
 
+def test_mesh_radar_altitude():
+    from scenic.simulators.basilisk.asteroid_mesh import (
+        generate_asteroid_mesh,
+        world_surface_altitude,
+    )
+
+    mesh = generate_asteroid_mesh(radii=(40, 40, 40), noise_amp=0.0, subdivisions=2)
+    alt = world_surface_altitude(
+        mesh, craft_world=(0, 0, 80), asteroid_world=(0, 0, -150)
+    )
+    # Distance to COM 230m minus ~40m radius ≈ 190m.
+    assert 150.0 < alt < 220.0
+
+
 def test_env_shim_import():
     from asteroid_rl.env import build_sim, LandingEnvConfig
 
