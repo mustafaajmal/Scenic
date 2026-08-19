@@ -1,11 +1,6 @@
-"""Mars-rover-style procedural asteroid: shape + placement vary each sample.
+"""Showcase procedural rock with full divert lander (MODE C).
 
-Mirrors ``examples/webots/mars/narrowGoal.scenic``::
-
-    ground = new MarsGround on (0,0,0), with terrain [new MarsHill for _ in range(60)]
-
-Each ``generate()`` re-samples pose, size, bumps, craters, ridges, and
-``detailSeed`` (fine noise). Basilisk rebuilds MuJoCo mesh + albedo for Vizard.
+For MODE A / B see ``soft_brake_inbound.scenic`` and ``acquire_and_land.scenic``.
 """
 
 model scenic.simulators.basilisk.model
@@ -14,8 +9,10 @@ param gravity_mode = 'constant'
 param max_thrust = 275.0
 param enable_viz = True
 param viz_mode = 'file'
+param timestep = 0.25
+param attitude_mode = 'slew'
+param slew_rate_deg_s = 28.0
 
-# Terrain list is sampled fresh every Scenic generate() — like Mars hills.
 asteroid = new ProceduralAsteroid at (Range(-40, 40), Range(-40, 40), -150 + Range(-25, 25)),
     with radiusX Range(35, 75),
     with radiusY Range(28, 65),
@@ -29,17 +26,17 @@ asteroid = new ProceduralAsteroid at (Range(-40, 40), Range(-40, 40), -150 + Ran
         + [new AsteroidRidge for _ in range(12)]
     )
 
-behavior SoftBrakeTowardAsteroid():
+behavior DivertAcquireLand():
     while True:
-        take PointAtTargetAction(asteroid.position), SetThrottleAction(0.6)
+        take LanderGuidanceAction('divert')
         wait
 
 ego = new Spacecraft at (Range(-70, 70), Range(-70, 70), Range(55, 130)),
-    with velocity (Range(-0.8, 0.8), Range(-0.8, 0.8), Range(-1.6, -0.5)),
-    facing toward asteroid,
-    with behavior SoftBrakeTowardAsteroid
+    with velocity (Range(-1.5, 1.5), Range(-1.5, 1.5), Range(-1.4, 0.6)),
+    facing (Range(0, 360) deg, Range(-75, 75) deg, Range(-180, 180) deg),
+    with behavior DivertAcquireLand
 
 require distance from ego to asteroid > 90
 require distance from ego to asteroid < 320
 
-terminate after 25 seconds
+terminate after 90 seconds

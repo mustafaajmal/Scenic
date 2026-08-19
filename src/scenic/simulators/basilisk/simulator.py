@@ -53,6 +53,8 @@ class BasiliskSimulator(Simulator):
         viz_mode: str = "auto",
         viz_save_file: str = "",
         default_timestep: float = 0.25,
+        attitude_mode: str = "slew",
+        slew_rate_deg_s: float = 25.0,
     ):
         super().__init__()
         root = asteroid_rl_root if asteroid_rl_root else None
@@ -66,6 +68,8 @@ class BasiliskSimulator(Simulator):
             viz_mode=viz_mode,
             viz_save_file=viz_save_file,
             control_dt=default_timestep,
+            attitude_mode=attitude_mode,
+            slew_rate_deg_s=slew_rate_deg_s,
         )
         self.default_timestep = float(default_timestep)
 
@@ -301,6 +305,14 @@ class BasiliskSimulation(Simulation):
             vals["throttle"] = float(getattr(obj, "throttle", 0.0) or 0.0)
         if "altitude" in properties:
             vals["altitude"] = float(self.backend.surface_altitude(r))
+        if "landed" in properties:
+            vals["landed"] = bool(getattr(self.backend, "_landed", False))
+        if "inContact" in properties:
+            vals["inContact"] = bool(getattr(self.backend, "_in_contact", False))
+        if "guidancePhase" in properties:
+            vals["guidancePhase"] = str(
+                getattr(self.backend, "_last_guidance", {}).get("phase", "")
+            )
         for prop in properties:
             if prop not in vals:
                 vals[prop] = getattr(obj, prop, None)

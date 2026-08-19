@@ -6,6 +6,12 @@ Scenarios should begin with::
 
 Supports stock Itokawa (``Asteroid``) or Mars-style procedural rocks
 (``ProceduralAsteroid`` + bump/crater/ridge terrain).
+
+Attitude:
+  ``param attitude_mode = 'slew'`` — rate-limited boresight slew (RW stand-in)
+  ``param attitude_mode = 'instant'`` — legacy MRP teleport
+
+Lander actions: ``LanderGuidanceAction('soft_brake'|'acquire'|'divert')``.
 """
 
 from scenic.simulators.basilisk.actions import *
@@ -20,6 +26,8 @@ param viz_mode = 'auto'
 param viz_save_file = ''
 param timestep = 0.25
 param asteroid_rl_root = ''
+param attitude_mode = 'slew'
+param slew_rate_deg_s = 25.0
 
 simulator BasiliskSimulator(
     asteroid_rl_root=globalParameters.asteroid_rl_root,
@@ -31,6 +39,8 @@ simulator BasiliskSimulator(
     viz_mode=globalParameters.viz_mode,
     viz_save_file=globalParameters.viz_save_file,
     default_timestep=globalParameters.timestep,
+    attitude_mode=globalParameters.attitude_mode,
+    slew_rate_deg_s=globalParameters.slew_rate_deg_s,
 )
 
 workspace = Workspace(BoxRegion(dimensions=(800, 800, 800), position=(0, 0, 0)))
@@ -85,7 +95,6 @@ class AsteroidRidge(BasiliskObject):
     ridgeHeight: Range(4.0, 16.0)
     ridgeLength: Range(12.0, 40.0)
     ridgeWidth: Range(3.0, 10.0)
-    # Tangent-ish direction sampled in Scenic (normalized in the mesh builder).
     ridgeDir: (Range(-1, 1), Range(-1, 1), Range(-1, 1))
     width: 1
     length: 1
@@ -93,11 +102,7 @@ class AsteroidRidge(BasiliskObject):
     regionContainedIn: everywhere
 
 class ProceduralAsteroid(BasiliskObject):
-    """Dynamically generated asteroid; rebuilt each Scenic ``generate()``.
-
-    Analogous to Webots/MuJoCo ``Ground`` with a ``terrain`` list: each sample
-    draws new size/pose/terrain and a ``detailSeed`` so fine noise also changes.
-    """
+    """Dynamically generated asteroid; rebuilt each Scenic ``generate()``."""
     basiliskKind: 'procedural_asteroid'
     allowCollisions: True
     radiusX: Range(35, 65)
@@ -107,7 +112,6 @@ class ProceduralAsteroid(BasiliskObject):
     length: 2 * self.radiusY
     height: 2 * self.radiusZ
     subdivisions: 3
-    # Sampled every generate() — drives multi-octave surface noise + albedo.
     detailSeed: Range(0, 1e9)
     noiseAmp: Range(1.2, 3.5)
     terrain: ()
@@ -120,6 +124,9 @@ class Spacecraft(BasiliskObject):
     height: 2
     throttle[dynamic]: 0.0
     altitude[dynamic]: 0.0
+    guidancePhase[dynamic]: ''
+    landed[dynamic]: False
+    inContact[dynamic]: False
     allowCollisions: True
 
 landingPadRegion = RectangularRegion(0 @ 0, 0, 40, 40)

@@ -18,6 +18,7 @@ import csv
 import json
 import os
 import random
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,6 +34,12 @@ CURRICULUM = {
     "sphere": Path(__file__).with_name("curriculum") / "sphere.scenic",
     "ellipsoid": Path(__file__).with_name("curriculum") / "ellipsoid.scenic",
     "bumpy": Path(__file__).with_name("curriculum") / "bumpy.scenic",
+}
+
+CURRICULUM_DIVERT = {
+    "sphere": Path(__file__).with_name("curriculum_divert") / "sphere.scenic",
+    "ellipsoid": Path(__file__).with_name("curriculum_divert") / "ellipsoid.scenic",
+    "bumpy": Path(__file__).with_name("curriculum_divert") / "bumpy.scenic",
 }
 
 # Low / writeup-friendly gates (PRIMARY = reach).
@@ -99,10 +106,12 @@ def run_stage(
     records_dir: Path | None,
     viz_dir: Path | None = None,
     viz_every: bool = False,
+    curriculum: dict | None = None,
 ) -> list[dict]:
     import scenic
 
-    path = CURRICULUM[stage]
+    table = curriculum or CURRICULUM
+    path = table[stage]
     rows = []
     for i in range(episodes):
         s = int(seed) + i
@@ -254,14 +263,21 @@ def main() -> None:
         action="store_true",
         help="After eval, open the last recorded .bin in Vizard",
     )
+    parser.add_argument(
+        "--divert",
+        action="store_true",
+        help="Use curriculum_divert (MODE C miss traj/attitude) instead of inbound soft-brake",
+    )
     args = parser.parse_args()
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     records_dir = None if args.no_records else out.parent / "records"
     viz_dir = (out.parent / "viz") if (args.viz or args.viz_all) else None
+    curriculum = CURRICULUM_DIVERT if args.divert else CURRICULUM
 
-    print("MINIMUM Scenic policy eval (scripted soft-brake vs curriculum)\n")
+    label = "divert GNC" if args.divert else "inbound soft-brake"
+    print(f"MINIMUM Scenic policy eval ({label} vs curriculum)\n")
     print(
         f"Gates — contact: {CONTACT_ALT_MIN}<=alt<={CONTACT_ALT_MAX} m; "
         f"reach (PRIMARY safe): speed<={REACH_SPEED}; "
@@ -280,6 +296,7 @@ def main() -> None:
             records_dir,
             viz_dir=viz_dir,
             viz_every=bool(args.viz_all),
+            curriculum=curriculum,
         )
         all_rows.extend(rows)
         n = max(len(rows), 1)
@@ -328,7 +345,11 @@ def main() -> None:
                 from asteroid_rl.environment.gym_env import _find_vizard_app
                 from asteroid_rl.sensing.camera import launch_vizard_load_file
 
-                launch_vizard_load_file(last, find_app_fn=_find_vizard_app)
+                launch_vizard_load_file(
+                    last,
+                    find_app_fn=_find_vizard_app,
+                    popen_fn=subprocess.Popen,
+                )
             except Exception as exc:
                 print(f"Could not auto-open Vizard ({exc}). Replay with:")
                 print(f'  "$USERPROFILE/OneDrive/Documents/Applications/Vizard/Vizard.exe" -loadFile "{last}"')

@@ -1,4 +1,4 @@
-"""Curriculum soft-brake (MODE A): facing body, inbound — bumpy."""
+"""Curriculum divert (MODE C): miss traj/attitude — bumpy."""
 
 model scenic.simulators.basilisk.model
 
@@ -7,8 +7,9 @@ param max_thrust = 275.0
 param enable_viz = False
 param timestep = 0.25
 param attitude_mode = 'slew'
-param curriculum_stage = 'bumpy'
-param lander_mode = 'soft_brake'
+param slew_rate_deg_s = 28.0
+param curriculum_stage = 'bumpy_divert'
+param lander_mode = 'divert'
 
 asteroid = new ProceduralAsteroid at (Range(-25, 25), Range(-25, 25), -150 + Range(-15, 15)),
     with radiusX Range(38, 65), with radiusY Range(30, 55), with radiusZ Range(28, 50),
@@ -19,18 +20,18 @@ asteroid = new ProceduralAsteroid at (Range(-25, 25), Range(-25, 25), -150 + Ran
         + [new AsteroidRidge for _ in range(8)]
     )
 
-behavior SoftBrakeInbound():
+behavior DivertLand():
     while True:
-        take LanderGuidanceAction('soft_brake')
+        take LanderGuidanceAction('divert')
         wait
 
-ego = new Spacecraft at (Range(-18, 18), Range(-18, 18), Range(12, 55)),
-    with velocity (Range(-0.35, 0.35), Range(-0.35, 0.35), Range(-2.4, -1.0)),
-    facing toward asteroid,
-    with behavior SoftBrakeInbound
+ego = new Spacecraft at (Range(-40, 40), Range(-40, 40), Range(25, 110)),
+    with velocity (Range(-1.8, 1.8), Range(-1.8, 1.8), Range(-1.2, 1.0)),
+    facing (Range(0, 360) deg, Range(-80, 80) deg, Range(-180, 180) deg),
+    with behavior DivertLand
 
-require distance from ego to asteroid > 120
-require distance from ego to asteroid < 260
+require distance from ego to asteroid > 125
+require distance from ego to asteroid < 270
 
 record ego.altitude as altitude_m
 record ego.speed as speed_mps
@@ -38,4 +39,4 @@ record ego.throttle as throttle
 record ego.position.z as z_m
 
 terminate when ego.landed or ego.inContact or ego.altitude < 0.35
-terminate after 75 seconds
+terminate after 120 seconds

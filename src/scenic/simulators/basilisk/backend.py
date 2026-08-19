@@ -59,6 +59,9 @@ class BasiliskBackendConfig:
     viz_mode: str = "auto"
     viz_save_file: str = ""
     control_dt: float = 0.25
+    # ``instant`` = teleport MRP (legacy). ``slew`` = rate-limited RW stand-in.
+    attitude_mode: str = "slew"
+    slew_rate_deg_s: float = 25.0
 
 
 class BasiliskBackend:
@@ -77,6 +80,12 @@ class BasiliskBackend:
         self._procedural_mesh: Any = None
         self._asteroid_pos_N: Optional[np.ndarray] = None
         self.procedural_meta: dict = {}
+        self._guidance_acquired: bool = False
+        self._last_guidance: dict = {}
+        self._landed: bool = False
+        self._in_contact: bool = False
+        self._frozen_pose: Optional[list] = None
+        self._frozen_sigma: Optional[list] = None
 
     @property
     def demo_root(self) -> Path:
@@ -131,6 +140,12 @@ class BasiliskBackend:
         self.handles.thrust_msg.write(messaging.SingleActuatorMsgPayload(input=0.0))
         self._pending_throttle = 0.0
         self._pending_point_dir = None
+        self._guidance_acquired = False
+        self._last_guidance = {}
+        self._landed = False
+        self._in_contact = False
+        self._frozen_pose = None
+        self._frozen_sigma = None
         self.procedural_meta = {"mode": "stock_itokawa"}
         self._procedural_mesh = None
         self._asteroid_pos_N = None
@@ -220,11 +235,19 @@ class BasiliskBackend:
         ast = np.asarray(asteroid_position_N, dtype=np.float64).reshape(3)
         self._asteroid_pos_N = ast.copy()
         obj_path = write_obj(mesh, work / "procedural_asteroid.obj")
+        # Convex hull = hard collision surface (visual mesh may be non-convex).
+        try:
+            hull = mesh.convex_hull
+            col_path = write_obj(hull, work / "asteroid_collision.obj")
+            col_name = col_path.name
+        except Exception:
+            col_name = obj_path.name
         tex_path = write_albedo_texture(mesh, work / "procedural_asteroid.jpg")
         xml_path = write_landing_xml(
             xml_path=work / "sat_ast_landing_dynamic.xml",
             mesh_filename=obj_path.name,
             asteroid_pos=asteroid_position_N,
+            collision_mesh_filename=col_name,
         )
 
         cfg = self._make_config()
@@ -242,7 +265,10 @@ class BasiliskBackend:
         task = scSim.CreateNewTask(SIM_TASK_NAME, macros.sec2nano(SIM_DT))
         process.addTask(task)
 
-        scene = mujoco.MJScene.fromFile(str(xml_path), files=[str(obj_path)])
+        scene = mujoco.MJScene.fromFile(
+            str(xml_path),
+            files=[str(obj_path), str(work / col_name)],
+        )
         scSim.AddModelToTask(SIM_TASK_NAME, scene)
 
         integ = svIntegrators.svIntegratorRKF45(scene)
@@ -329,6 +355,12 @@ class BasiliskBackend:
         self.handles.thrust_msg.write(messaging.SingleActuatorMsgPayload(input=0.0))
         self._pending_throttle = 0.0
         self._pending_point_dir = None
+        self._guidance_acquired = False
+        self._last_guidance = {}
+        self._landed = False
+        self._in_contact = False
+        self._frozen_pose = None
+        self._frozen_sigma = None
         self.advance(SIM_DT)
 
         self.procedural_meta = {
@@ -393,6 +425,12 @@ class BasiliskBackend:
         self.handles.thrust_msg.write(messaging.SingleActuatorMsgPayload(input=0.0))
         self._pending_throttle = 0.0
         self._pending_point_dir = None
+        self._guidance_acquired = False
+        self._last_guidance = {}
+        self._landed = False
+        self._in_contact = False
+        self._frozen_pose = None
+        self._frozen_sigma = None
         self.advance(0.02)
 
     def set_asteroid_pose(
@@ -434,20 +472,152 @@ class BasiliskBackend:
             np.asarray(target_N, dtype=np.float64).reshape(3) - r
         )
 
+    def guidance_target(self) -> np.ndarray:
+        """Preferred aim/land point: landing site if known, else asteroid COM."""
+        if self._landing_site is not None:
+            return np.asarray(self._landing_site, dtype=np.float64).reshape(3)
+        if self._asteroid_pos_N is not None:
+            return np.asarray(self._asteroid_pos_N, dtype=np.float64).reshape(3)
+        return np.array([0.0, 0.0, -150.0], dtype=np.float64)
+
+    def apply_lander_guidance(self, mode: str) -> dict:
+        """Compute and queue throttle + pointing for a lander guidance mode."""
+        from scenic.simulators.basilisk.guidance import compute_guidance
+
+        if self.handles is None:
+            return {}
+        r, v = self.read_state()
+        sigma = self.read_mrp()
+        alt = float(self.surface_altitude(r))
+        cmd = compute_guidance(
+            position_N=r,
+            velocity_N=v,
+            altitude_m=alt,
+            target_N=self.guidance_target(),
+            mode=mode,
+            sigma_BN=sigma,
+            acquired=bool(self._guidance_acquired),
+            landed=bool(self._landed),
+            in_contact=bool(self._in_contact),
+        )
+        self._guidance_acquired = bool(cmd.get("acquired", False))
+        if cmd.get("landed"):
+            self._landed = True
+        self._last_guidance = dict(cmd)
+        self._pending_throttle = float(cmd["throttle"])
+        self._pending_point_dir = np.asarray(cmd["point_dir"], dtype=np.float64).reshape(3)
+        return self._last_guidance
+
+    def enforce_surface_contact(self) -> None:
+        """Unilateral contact: stick to the surface (no bounce).
+
+        On contact: place craft at the contact altitude, zero velocity/rates,
+        cut thrust, and latch ``_landed`` so later steps freeze the hub.
+        """
+        from scenic.simulators.basilisk.guidance import (
+            CONTACT_ALT_M,
+            SETTLE_ALT_MAX_M,
+            SETTLE_SPEED_MPS,
+            unit,
+        )
+
+        if self.handles is None or self._hub is None:
+            return
+        if not hasattr(self._hub, "setPosition") or not hasattr(self._hub, "setVelocity"):
+            return
+        # Already stuck — re-assert freeze (guards against gravity/contact spring).
+        if self._landed and self._frozen_pose is not None:
+            self._hold_frozen_pose()
+            return
+
+        r, v = self.read_state()
+        alt = float(self.surface_altitude(r))
+        speed = float(np.linalg.norm(v))
+        if self._asteroid_pos_N is not None:
+            n_hat = unit(r - self._asteroid_pos_N)
+        else:
+            n_hat = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+
+        # Stick once in the soft-land band at low speed, or on hard contact.
+        soft_stick = alt <= SETTLE_ALT_MAX_M and speed <= min(SETTLE_SPEED_MPS, 1.5)
+        hard_contact = alt < CONTACT_ALT_M
+        if soft_stick or hard_contact:
+            self._in_contact = True
+            # Place on/above the contact shell; never leave residual velocity.
+            if alt < CONTACT_ALT_M:
+                new_r = r + n_hat * (CONTACT_ALT_M - alt)
+            else:
+                new_r = r
+            try:
+                self._hub.setPosition([float(x) for x in new_r])
+                self._hub.setVelocity([0.0, 0.0, 0.0])
+                if hasattr(self._hub, "setAttitudeRate"):
+                    self._hub.setAttitudeRate([0.0, 0.0, 0.0])
+                sigma = self.read_mrp()
+                self._frozen_pose = [float(x) for x in new_r]
+                self._frozen_sigma = [float(x) for x in sigma]
+            except Exception:
+                self._frozen_pose = [float(x) for x in r]
+                self._frozen_sigma = None
+            self._landed = True
+            self._pending_throttle = 0.0
+        else:
+            self._in_contact = False
+
+    def _hold_frozen_pose(self) -> None:
+        """Kinematically lock hub after soft-land (defeats gravity bounce)."""
+        if self._hub is None or self._frozen_pose is None:
+            return
+        self._pending_throttle = 0.0
+        try:
+            self._hub.setPosition(list(self._frozen_pose))
+            self._hub.setVelocity([0.0, 0.0, 0.0])
+            if hasattr(self._hub, "setAttitudeRate"):
+                self._hub.setAttitudeRate([0.0, 0.0, 0.0])
+            if self._frozen_sigma is not None and hasattr(self._hub, "setAttitude"):
+                self._hub.setAttitude(list(self._frozen_sigma))
+        except Exception:
+            pass
+        try:
+            from Basilisk.architecture import messaging
+
+            self.handles.thrust_msg.write(
+                messaging.SingleActuatorMsgPayload(input=0.0)
+            )
+        except Exception:
+            pass
+
     def flush_controls(self) -> None:
         from Basilisk.architecture import messaging
         from asteroid_rl.dynamics.pointing import apply_pointing_direction
+        from scenic.simulators.basilisk.guidance import boresight_inertial, slew_direction
 
         if self.handles is None or self._hub is None:
             return
         if self._pending_point_dir is not None:
-            apply_pointing_direction(self._hub, self._pending_point_dir)
+            desired = np.asarray(self._pending_point_dir, dtype=np.float64).reshape(3)
+            mode = str(getattr(self.config, "attitude_mode", "slew")).lower()
+            if mode == "instant":
+                apply_pointing_direction(self._hub, desired)
+            else:
+                # Rate-limited slew toward desired boresight (RW stand-in).
+                sigma = self.read_mrp()
+                current = boresight_inertial(sigma)
+                max_ang = np.deg2rad(
+                    float(getattr(self.config, "slew_rate_deg_s", 25.0))
+                ) * float(getattr(self.config, "control_dt", 0.25))
+                stepped = slew_direction(current, desired, max_ang)
+                apply_pointing_direction(self._hub, stepped)
+                # Command body rate ≈ 0 after each discrete slew step (no RW plant yet).
+                if hasattr(self._hub, "setAttitudeRate"):
+                    self._hub.setAttitudeRate([0.0, 0.0, 0.0])
         thrust_N = self._pending_throttle * float(self.handles.config.max_thrust)
         self.handles.thrust_msg.write(
             messaging.SingleActuatorMsgPayload(input=float(thrust_N))
         )
 
     def advance(self, dt: float) -> None:
+        from Basilisk.architecture import messaging
         from Basilisk.utilities import macros
 
         if self.handles is None:
@@ -455,11 +625,30 @@ class BasiliskBackend:
         dt = float(dt)
         if dt <= 0.0:
             return
+        self._pending_throttle = 0.0 if self._landed else self._pending_throttle
+        # Once landed: do not integrate dynamics (gravity/contact would bounce).
+        if self._landed and self._frozen_pose is not None:
+            self.handles.absolute_sim_time_sec += dt
+            self._hold_frozen_pose()
+            return
         self.handles.absolute_sim_time_sec += dt
         self.handles.scSim.ConfigureStopTime(
             macros.sec2nano(self.handles.absolute_sim_time_sec)
         )
         self.handles.scSim.ExecuteSimulation()
+        try:
+            self.enforce_surface_contact()
+        except Exception:
+            pass
+        if self._landed or self._in_contact:
+            try:
+                self.handles.thrust_msg.write(
+                    messaging.SingleActuatorMsgPayload(input=0.0)
+                )
+            except Exception:
+                pass
+            if self._landed:
+                self._hold_frozen_pose()
 
     def read_state(self) -> Tuple[np.ndarray, np.ndarray]:
         if self.handles is None:

@@ -179,3 +179,62 @@ def test_env_shim_import():
 
     assert build_sim is not None
     assert LandingEnvConfig is not None
+
+
+def test_guidance_modes_and_slew():
+    import numpy as np
+    from scenic.simulators.basilisk.guidance import (
+        compute_guidance,
+        soft_brake_throttle,
+        slew_direction,
+    )
+
+    target = (0.0, 0.0, -30.0)
+    c = compute_guidance(
+        position_N=(0, 0, 60),
+        velocity_N=(0, 0, -2),
+        altitude_m=50,
+        target_N=target,
+        mode="soft_brake",
+    )
+    assert c["phase"] == "soft_brake"
+    assert float(c["throttle"]) > 0.0
+    # Settle band: must cut thrust (no shoot-off).
+    assert soft_brake_throttle(5.0, 1.0) == 0.0
+    assert soft_brake_throttle(0.2, 5.0) == 0.0
+    c_land = compute_guidance(
+        position_N=(0, 0, -25),
+        velocity_N=(0, 0, -0.5),
+        altitude_m=0.2,
+        target_N=target,
+        mode="divert",
+    )
+    assert c_land["landed"] is True
+    assert float(c_land["throttle"]) == 0.0
+    c2 = compute_guidance(
+        position_N=(10, 0, 80),
+        velocity_N=(0, 0, 2),
+        altitude_m=100,
+        target_N=target,
+        mode="divert",
+        sigma_BN=(0, 0, 0),
+    )
+    assert c2["phase"] == "divert"
+    assert float(c2["throttle"]) > 0.3
+    d = slew_direction((0, 0, -1), (1, 0, 0), np.deg2rad(15))
+    assert abs(float(np.linalg.norm(d)) - 1.0) < 1e-6
+
+
+def test_divert_scenario_smoke():
+    import scenic
+
+    path = ROOT / "examples" / "basilisk" / "divert_and_land.scenic"
+    scenario = scenic.scenarioFromFile(
+        str(path), params={"enable_viz": False, "attitude_mode": "slew"}
+    )
+    scene, _ = scenario.generate(maxIterations=40)
+    sim = scenario.getSimulator().simulate(
+        scene, maxSteps=12, timestep=0.25, verbosity=0
+    )
+    assert sim is not None
+    assert getattr(sim.backend, "_last_guidance", None)

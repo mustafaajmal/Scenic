@@ -407,25 +407,34 @@ def write_landing_xml(
     mesh_filename: str,
     asteroid_pos: Sequence[float],
     mesh_scale: float = 1.0,
+    collision_mesh_filename: Optional[str] = None,
 ) -> Path:
-    """Write a sat_ast_landing-like MuJoCo XML with a positioned asteroid mesh."""
+    """Write a sat_ast_landing-like MuJoCo XML with a positioned asteroid mesh.
+
+    Visual mesh is non-colliding; a (usually convex-hull) collision mesh provides
+    a hard surface with stiff contacts so the lander does not ghost through.
+    """
     ax, ay, az = [float(x) for x in asteroid_pos]
     s = float(mesh_scale)
+    col_file = collision_mesh_filename or mesh_filename
     xml = f"""<mujoco>
-  <option gravity="0 0 0"/>
+  <option gravity="0 0 0" timestep="0.01" cone="elliptic" solver="Newton" iterations="50"/>
   <compiler meshdir="."/>
 
   <default class="main">
+    <geom contype="1" conaffinity="1" condim="3" friction="1.5 0.1 0.001"
+          solref="0.02 2.5" solimp="0.999 0.999 0.001"/>
     <default class="panel">
       <geom type="box" pos="0 0 2" size="1.1 0.05 2" rgba="0 1 0 1"/>
     </default>
     <default class="leg">
-      <geom type="capsule" size="0.1" fromto="0 0 0 0 0 1.25" rgba="1 0 1 1"/>
+      <geom type="capsule" size="0.12" fromto="0 0 0 0 0 1.25" rgba="1 0 1 1"/>
     </default>
   </default>
 
   <asset>
-    <mesh name="asteroid" file="{mesh_filename}" scale="{s} {s} {s}"/>
+    <mesh name="asteroid_visual" file="{mesh_filename}" scale="{s} {s} {s}"/>
+    <mesh name="asteroid_collision" file="{col_file}" scale="{s} {s} {s}"/>
   </asset>
 
   <worldbody>
@@ -455,7 +464,12 @@ def write_landing_xml(
     </body>
 
     <body name="asteroid" pos="{ax} {ay} {az}">
-      <geom name="asteroid" type="mesh" mesh="asteroid" rgba="0.55 0.45 0.35 1"/>
+      <geom name="asteroid_visual" type="mesh" mesh="asteroid_visual"
+            contype="0" conaffinity="0" rgba="0.55 0.45 0.35 1"/>
+      <geom name="asteroid_collision" type="mesh" mesh="asteroid_collision"
+            contype="1" conaffinity="1" condim="3"
+            solref="0.02 2.5" solimp="0.999 0.999 0.001"
+            friction="1.8 0.1 0.001" rgba="0.55 0.45 0.35 0"/>
     </body>
   </worldbody>
 
